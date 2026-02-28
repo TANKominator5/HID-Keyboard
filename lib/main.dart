@@ -16,18 +16,113 @@ class HidKeyboardApp extends StatelessWidget {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: themeNotifier,
       builder: (context, mode, _) {
+        // ── AMOLED-optimized pure black dark theme ────────────────────
+        final amoledDark = ThemeData(
+          brightness: Brightness.dark,
+          scaffoldBackgroundColor: Colors.black,
+          colorSchemeSeed: Colors.deepPurple,
+          useMaterial3: true,
+          canvasColor: Colors.black,
+          cardColor: Colors.black,
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Colors.black,
+            surfaceTintColor: Colors.transparent,
+            foregroundColor: Colors.white,
+            elevation: 0,
+          ),
+          cardTheme: const CardThemeData(
+            color: Color(0xFF111111),
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+          ),
+          dialogTheme: const DialogThemeData(
+            backgroundColor: Colors.black,
+          ),
+          bottomSheetTheme: const BottomSheetThemeData(
+            backgroundColor: Colors.black,
+            surfaceTintColor: Colors.transparent,
+          ),
+          navigationBarTheme: const NavigationBarThemeData(
+            backgroundColor: Colors.black,
+            surfaceTintColor: Colors.transparent,
+          ),
+          switchTheme: SwitchThemeData(
+            thumbColor: WidgetStateProperty.resolveWith((states) =>
+                states.contains(WidgetState.selected) ? Colors.deepPurple : Colors.grey),
+            trackColor: WidgetStateProperty.resolveWith((states) =>
+                states.contains(WidgetState.selected) ? Colors.deepPurple.withValues(alpha: 0.4) : Colors.grey.shade800),
+          ),
+          sliderTheme: SliderThemeData(
+            activeTrackColor: Colors.deepPurple,
+            thumbColor: Colors.deepPurple,
+            inactiveTrackColor: Colors.grey.shade800,
+            overlayColor: Colors.deepPurple.withValues(alpha: 0.2),
+            valueIndicatorColor: Colors.deepPurple,
+          ),
+          inputDecorationTheme: InputDecorationTheme(
+            filled: true,
+            fillColor: Colors.black,
+            border: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.deepPurple.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.deepPurple.shade300),
+            ),
+            focusedBorder: const OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.deepPurple, width: 2),
+            ),
+            labelStyle: TextStyle(color: Colors.deepPurple.shade200),
+            counterStyle: const TextStyle(color: Colors.grey),
+          ),
+          textSelectionTheme: TextSelectionThemeData(
+            cursorColor: Colors.deepPurple,
+            selectionColor: Colors.deepPurple.withValues(alpha: 0.3),
+            selectionHandleColor: Colors.deepPurple,
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              surfaceTintColor: Colors.transparent,
+            ),
+          ),
+          popupMenuTheme: const PopupMenuThemeData(
+            color: Colors.black,
+            surfaceTintColor: Colors.transparent,
+          ),
+        );
+
+        // ── Light theme (kept simple) ─────────────────────────────────
+        final lightTheme = ThemeData(
+          brightness: Brightness.light,
+          colorSchemeSeed: Colors.deepPurple,
+          useMaterial3: true,
+          sliderTheme: const SliderThemeData(
+            activeTrackColor: Colors.deepPurple,
+            thumbColor: Colors.deepPurple,
+            valueIndicatorColor: Colors.deepPurple,
+          ),
+          switchTheme: SwitchThemeData(
+            thumbColor: WidgetStateProperty.resolveWith((states) =>
+                states.contains(WidgetState.selected) ? Colors.deepPurple : Colors.grey),
+            trackColor: WidgetStateProperty.resolveWith((states) =>
+                states.contains(WidgetState.selected) ? Colors.deepPurple.withValues(alpha: 0.4) : Colors.grey.shade300),
+          ),
+          inputDecorationTheme: InputDecorationTheme(
+            border: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.deepPurple.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.deepPurple.shade300),
+            ),
+            focusedBorder: const OutlineInputBorder(
+              borderSide: BorderSide(color: Colors.deepPurple, width: 2),
+            ),
+          ),
+        );
+
         return MaterialApp(
           title: 'HID Keyboard',
-          theme: ThemeData(
-            brightness: Brightness.light,
-            colorSchemeSeed: Colors.blue,
-            useMaterial3: true,
-          ),
-          darkTheme: ThemeData(
-            brightness: Brightness.dark,
-            colorSchemeSeed: Colors.blue,
-            useMaterial3: true,
-          ),
+          theme: lightTheme,
+          darkTheme: amoledDark,
           themeMode: mode,
           home: const HidKeyboardPage(),
           debugShowCheckedModeBanner: false,
@@ -293,7 +388,7 @@ class _HidKeyboardPageState extends State<HidKeyboardPage>
             Container(
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
               decoration: BoxDecoration(
-                color: _statusColor(_status).withOpacity(0.15),
+                color: _statusColor(_status).withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: _statusColor(_status)),
               ),
