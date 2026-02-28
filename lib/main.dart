@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'hid_keyboard_service.dart';
 
+// Global notifier so theme can be toggled from anywhere
+final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
+
 void main() {
   runApp(const HidKeyboardApp());
 }
@@ -10,10 +13,26 @@ class HidKeyboardApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'HID Keyboard',
-      home: const HidKeyboardPage(),
-      debugShowCheckedModeBanner: false,
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeNotifier,
+      builder: (context, mode, _) {
+        return MaterialApp(
+          title: 'HID Keyboard',
+          theme: ThemeData(
+            brightness: Brightness.light,
+            colorSchemeSeed: Colors.blue,
+            useMaterial3: true,
+          ),
+          darkTheme: ThemeData(
+            brightness: Brightness.dark,
+            colorSchemeSeed: Colors.blue,
+            useMaterial3: true,
+          ),
+          themeMode: mode,
+          home: const HidKeyboardPage(),
+          debugShowCheckedModeBanner: false,
+        );
+      },
     );
   }
 }
@@ -25,9 +44,12 @@ class HidKeyboardPage extends StatefulWidget {
   State<HidKeyboardPage> createState() => _HidKeyboardPageState();
 }
 
-class _HidKeyboardPageState extends State<HidKeyboardPage> {
+class _HidKeyboardPageState extends State<HidKeyboardPage>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _textController = TextEditingController();
   final HidKeyboardService _service = HidKeyboardService();
+
+  late final AnimationController _themeAnimController;
 
   String _status = 'Initialising...';
   bool _isTyping = false;
@@ -38,7 +60,12 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
   @override
   void initState() {
     super.initState();
+    _themeAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
     _service.onStatusChanged = (String status) {
+      // ...existing code...
       if (mounted) {
         setState(() {
           _status = status;
@@ -172,6 +199,7 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
 
   @override
   void dispose() {
+    _themeAnimController.dispose();
     _textController.dispose();
     _service.dispose();
     super.dispose();
@@ -193,6 +221,38 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
             icon: const Icon(Icons.bluetooth),
             tooltip: 'Connect to PC',
             onPressed: _showConnectSheet,
+          ),
+          // ── Animated dark/light mode toggle ─────────────────────────
+          IconButton(
+            tooltip: 'Toggle dark mode',
+            onPressed: () {
+              final isDark = themeNotifier.value == ThemeMode.dark;
+              if (isDark) {
+                _themeAnimController.reverse();
+                themeNotifier.value = ThemeMode.light;
+              } else {
+                _themeAnimController.forward();
+                themeNotifier.value = ThemeMode.dark;
+              }
+            },
+            icon: AnimatedBuilder(
+              animation: _themeAnimController,
+              builder: (context, child) {
+                return Transform.rotate(
+                  angle: _themeAnimController.value * 3.14159,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 350),
+                    transitionBuilder: (child, anim) => ScaleTransition(
+                      scale: anim,
+                      child: child,
+                    ),
+                    child: themeNotifier.value == ThemeMode.dark
+                        ? const Icon(Icons.dark_mode, key: ValueKey('dark'))
+                        : const Icon(Icons.light_mode, key: ValueKey('light')),
+                  ),
+                );
+              },
+            ),
           ),
         ],
       ),
