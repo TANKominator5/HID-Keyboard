@@ -29,6 +29,8 @@ class HidKeyboardService {
       return result ?? 'Initialising...';
     } on PlatformException catch (e) {
       return 'Error: ${e.message}';
+    } on MissingPluginException catch (_) {
+      return 'Error: App needs full rebuild';
     }
   }
 
@@ -43,10 +45,11 @@ class HidKeyboardService {
           .toList();
     } on PlatformException catch (_) {
       return [];
+    } on MissingPluginException catch (_) {
+      return [];
     }
   }
 
-  /// Instructs the native HID layer to connect to the device with [address].
   Future<String> connectToDevice(String address) async {
     try {
       final result = await _channel.invokeMethod<String>(
@@ -56,16 +59,19 @@ class HidKeyboardService {
       return result ?? 'Connecting...';
     } on PlatformException catch (e) {
       return 'Error: ${e.message}';
+    } on MissingPluginException catch (_) {
+      return 'Error: App needs full rebuild';
     }
   }
 
-  /// Makes the phone discoverable via the system dialog (120 s).
   Future<String> makeDiscoverable() async {
     try {
       final result = await _channel.invokeMethod<String>('makeDiscoverable');
       return result ?? 'Discoverable';
     } on PlatformException catch (e) {
       return 'Error: ${e.message}';
+    } on MissingPluginException catch (_) {
+      return 'Error: App needs full rebuild';
     }
   }
 

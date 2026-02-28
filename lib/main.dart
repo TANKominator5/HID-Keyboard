@@ -76,65 +76,87 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
   /// Shows a bottom sheet listing all already-paired Bluetooth devices.
   /// Tapping one calls connectToDevice() on the native side.
   Future<void> _showConnectSheet() async {
-    // Fetch paired devices first
     final devices = await _service.getPairedDevices();
-
     if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Select a paired device to connect',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              if (devices.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Text(
-                    'No paired devices found.\n\n'
-                    '1. Go to your phone\'s Bluetooth Settings\n'
-                    '2. Pair with your PC\n'
-                    '3. Come back and tap "Connect to PC"',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                )
-              else
-                ...devices.map((d) {
-                  final name = d['name'] ?? 'Unknown';
-                  final address = d['address'] ?? '';
-                  return ListTile(
-                    leading: const Icon(Icons.computer),
-                    title: Text(name),
-                    subtitle: Text(address),
-                    onTap: () async {
-                      Navigator.pop(ctx);
-                      final result = await _service.connectToDevice(address);
-                      if (mounted) setState(() => _status = result);
-                    },
-                  );
-                }),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  await _service.makeDiscoverable();
-                },
-                icon: const Icon(Icons.bluetooth_searching),
-                label: const Text('Make phone discoverable (120 s)'),
-              ),
-              const SizedBox(height: 8),
-            ],
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          maxChildSize: 0.9,
+          builder: (_, scrollController) => Padding(
+            padding: const EdgeInsets.all(16),
+            child: ListView(
+              controller: scrollController,
+              children: [
+                const Text(
+                  'Connect to PC',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Step 1: On your PC open Bluetooth Settings → "Add a device" and pair with this phone.\n'
+                  'Step 2: Tap your PC in the list below.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey),
+                ),
+                const Divider(height: 24),
+
+                // ── Make discoverable ─────────────────────────────────────
+                OutlinedButton.icon(
+                  onPressed: () async => await _service.makeDiscoverable(),
+                  icon: const Icon(Icons.bluetooth_searching),
+                  label: const Text('Make phone discoverable (120 s)'),
+                ),
+                const SizedBox(height: 12),
+
+                if (devices.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'No paired devices found.\n'
+                      'Pair with your PC in Android Bluetooth Settings first.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                else ...[
+                  const Text('Bonded devices:', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  ...devices.map((d) {
+                    final name = d['name'] ?? 'Unknown';
+                    final address = d['address'] ?? '';
+                    return Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.computer, color: Colors.blue),
+                        title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text(address),
+                        trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                        onTap: () async {
+                          Navigator.pop(ctx);
+                          setState(() => _status = 'Connecting...');
+                          final result = await _service.connectToDevice(address);
+                          if (mounted) setState(() => _status = result);
+                        },
+                      ),
+                    );
+                  }),
+                ],
+
+                const SizedBox(height: 16),
+                const Text(
+                  '⚠️  If your PC is not listed above, go to Android Bluetooth Settings, '
+                  'pair with the PC first, then come back here.',
+                  style: TextStyle(fontSize: 12, color: Colors.orange),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
         );
       },
@@ -152,6 +174,8 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
   Widget build(BuildContext context) {
     final charCount = _textController.text.length;
     final isPaired = _status == 'Paired & Ready';
+    final isWaiting = _status.startsWith('Waiting') || _status.startsWith('Registering');
+    final isConnecting = _status.startsWith('Connecting') || _status.startsWith('Device bonded');
 
     return Scaffold(
       appBar: AppBar(
@@ -218,18 +242,28 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
 
             const SizedBox(height: 12),
 
-            // ── CONNECT TO PC button (shown when not paired) ──────────────
+            // ── CONNECT TO PC button ──────────────────────────────────────
             if (!isPaired)
               SizedBox(
                 height: 48,
                 child: ElevatedButton.icon(
                   onPressed: _showConnectSheet,
-                  icon: const Icon(Icons.bluetooth_connected),
-                  label: const Text('Connect to PC'),
+                  icon: Icon(isConnecting || isWaiting
+                      ? Icons.bluetooth_searching
+                      : Icons.bluetooth_connected),
+                  label: Text(isConnecting
+                      ? 'Connecting... (tap to retry)'
+                      : isWaiting
+                          ? 'Waiting for PC… (tap to connect manually)'
+                          : 'Connect to PC'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueGrey,
+                    backgroundColor: isConnecting
+                        ? Colors.orange
+                        : isWaiting
+                            ? Colors.teal
+                            : Colors.blueGrey,
                     foregroundColor: Colors.white,
-                    textStyle: const TextStyle(fontSize: 16),
+                    textStyle: const TextStyle(fontSize: 15),
                   ),
                 ),
               ),
@@ -280,7 +314,8 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
     if (status.startsWith('Error')) return Colors.red;
     if (status == 'Paired & Ready') return Colors.green;
     if (status == 'Typing...') return Colors.orange;
-    if (status == 'Connecting...') return Colors.blue;
+    if (status.startsWith('Connecting') || status.startsWith('Device bonded')) return Colors.blue;
+    if (status.startsWith('Waiting') || status.startsWith('Registering')) return Colors.teal;
     return Colors.grey;
   }
 }

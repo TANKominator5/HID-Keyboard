@@ -115,6 +115,11 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        hidService.unregister()
+    }
+
     /** Sends the system intent that makes this device visible to other BT devices for 120 s. */
     private fun makeDiscoverable() {
         val discoverableIntent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
