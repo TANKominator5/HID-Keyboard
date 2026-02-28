@@ -66,11 +66,10 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
   }
 
   Future<void> _stopTyping() async {
-    final result = await _service.stopTyping();
-    if (mounted) setState(() {
-      _isTyping = false;
-      _status = result;
-    });
+    await _service.stopTyping();
+    // Don't manually set _isTyping or _status here.
+    // The native side will fire onStatusChanged → "Paired & Ready"
+    // once the typing thread exits cleanly.
   }
 
   /// Shows a bottom sheet listing all already-paired Bluetooth devices.
@@ -174,6 +173,7 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
   Widget build(BuildContext context) {
     final charCount = _textController.text.length;
     final isPaired = _status == 'Paired & Ready';
+    final isDisconnected = _status == 'Disconnected';
     final isWaiting = _status.startsWith('Waiting') || _status.startsWith('Registering');
     final isConnecting = _status.startsWith('Connecting') || _status.startsWith('Device bonded');
 
@@ -250,18 +250,24 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
                   onPressed: _showConnectSheet,
                   icon: Icon(isConnecting || isWaiting
                       ? Icons.bluetooth_searching
-                      : Icons.bluetooth_connected),
+                      : isDisconnected
+                          ? Icons.bluetooth_disabled
+                          : Icons.bluetooth_connected),
                   label: Text(isConnecting
                       ? 'Connecting... (tap to retry)'
                       : isWaiting
                           ? 'Waiting for PC… (tap to connect manually)'
-                          : 'Connect to PC'),
+                          : isDisconnected
+                              ? 'Reconnect to PC'
+                              : 'Connect to PC'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: isConnecting
                         ? Colors.orange
                         : isWaiting
                             ? Colors.teal
-                            : Colors.blueGrey,
+                            : isDisconnected
+                                ? Colors.red
+                                : Colors.blueGrey,
                     foregroundColor: Colors.white,
                     textStyle: const TextStyle(fontSize: 15),
                   ),
@@ -314,6 +320,7 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
     if (status.startsWith('Error')) return Colors.red;
     if (status == 'Paired & Ready') return Colors.green;
     if (status == 'Typing...') return Colors.orange;
+    if (status == 'Disconnected') return Colors.red;
     if (status.startsWith('Connecting') || status.startsWith('Device bonded')) return Colors.blue;
     if (status.startsWith('Waiting') || status.startsWith('Registering')) return Colors.teal;
     return Colors.grey;

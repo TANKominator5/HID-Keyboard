@@ -12,6 +12,10 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 
+    <!-- Foreground service to keep BT HID alive when app is backgrounded -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
     <!-- Required hardware feature: this app only works on devices with BT -->
     <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
 
@@ -19,6 +23,13 @@
         android:label="hid_keyboard"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+
+        <!-- Foreground service that keeps the process alive for BT HID -->
+        <service
+            android:name=".HidForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

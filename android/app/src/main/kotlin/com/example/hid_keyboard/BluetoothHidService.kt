@@ -1,6 +1,10 @@
 package com.example.hid_keyboard
 
 import android.annotation.SuppressLint
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothHidDevice
@@ -12,34 +16,63 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import java.util.concurrent.Executors
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HidForegroundService
+//
+// A minimal foreground service that keeps the process alive so the Bluetooth
+// HID profile proxy is not torn down when the user switches away from the app.
+// ─────────────────────────────────────────────────────────────────────────────
+class HidForegroundService : Service() {
+    companion object {
+        const val CHANNEL_ID = "hid_keyboard_fg"
+        const val NOTIFICATION_ID = 1
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        val chan = NotificationChannel(
+            CHANNEL_ID, "HID Keyboard", NotificationManager.IMPORTANCE_LOW
+        ).apply { description = "Keeps Bluetooth HID alive" }
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(chan)
+
+        val notification = Notification.Builder(this, CHANNEL_ID)
+            .setContentTitle("HID Keyboard")
+            .setContentText("Bluetooth keyboard active")
+            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setOngoing(true)
+            .build()
+        startForeground(NOTIFICATION_ID, notification)
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        return START_STICKY
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BluetoothHidService
 //
 // Registers the Android device as a Bluetooth HID keyboard using the public
 // BluetoothHidDevice API (no root needed, available since Android 9 / API 28).
-//
-// Architecture:
-//   • register()    – calls registerApp() to advertise SDP record + HID descriptor
-//   • startTyping() – spins up a background executor that sends HID key-down/key-up
-//                     reports for every character with a 25 ms gap.
-//   • stopTyping()  – signals the executor to quit early.
-//   • statusCallback – lambda called from any thread whenever status changes;
-//                      callers must post to main thread if needed.
 // ─────────────────────────────────────────────────────────────────────────────
 
 typealias StatusCallback = (String) -> Unit
 
-@SuppressLint("MissingPermission")   // Permissions checked in MainActivity before any call.
+@SuppressLint("MissingPermission")
 class BluetoothHidService(
     private val context: Context,
     private val statusCallback: StatusCallback
 ) {
-
     companion object {
         private const val TAG = "BluetoothHidService"
 
@@ -185,9 +218,9 @@ class BluetoothHidService(
     }
 
     // ── State ─────────────────────────────────────────────────────────────────
+
     private val bluetoothAdapter: BluetoothAdapter? by lazy {
-        val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
-        bm?.adapter
+        (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
     }
 
     private var hidDevice: BluetoothHidDevice? = null
@@ -233,11 +266,11 @@ class BluetoothHidService(
     private val hidCallback = object : BluetoothHidDevice.Callback() {
 
         override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
-            Log.d(TAG, "onAppStatusChanged: registered=$registered pluggedDevice=$pluggedDevice")
+            Log.d(TAG, "onAppStatusChanged: registered=$registered")
             isRegistered = registered
             if (registered) {
                 postStatus("Waiting for PC to connect…")
-                // If user already tapped a device, connect now
+                // Fire any deferred connect
                 pendingConnectAddress?.let { addr ->
                     pendingConnectAddress = null
                     val target = bluetoothAdapter?.bondedDevices
@@ -247,7 +280,6 @@ class BluetoothHidService(
                     }
                 }
             } else {
-                isRegistered = false
                 postStatus("Not registered")
             }
         }
@@ -261,7 +293,8 @@ class BluetoothHidService(
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     if (connectedDevice?.address == device.address) connectedDevice = null
-                    postStatus("Not paired")
+                    // Don't panic – just report the disconnect so UI can reconnect
+                    postStatus("Disconnected")
                 }
                 BluetoothProfile.STATE_CONNECTING -> postStatus("Connecting...")
                 BluetoothProfile.STATE_DISCONNECTING -> postStatus("Disconnecting...")
@@ -277,16 +310,14 @@ class BluetoothHidService(
             hidDevice?.reportError(device, BluetoothHidDevice.ERROR_RSP_SUCCESS.toByte())
         }
 
-        override fun onInterruptData(device: BluetoothDevice, reportId: Byte, data: ByteArray) {
-            // Host-to-device interrupt data (e.g. LED state). We ignore it here.
-        }
+        override fun onInterruptData(device: BluetoothDevice, reportId: Byte, data: ByteArray) {}
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
-     * Registers the HID app and subscribes to bond-state broadcasts.
-     * Safe to call multiple times – skips if already registered.
+     * Starts the foreground service to keep the process alive,
+     * then registers the HID app.
      */
     fun register() {
         val adapter = bluetoothAdapter
@@ -295,41 +326,36 @@ class BluetoothHidService(
             return
         }
 
-        // Subscribe to bond-state events so we auto-connect on new pairings
+        // Start foreground service to survive backgrounding
+        val serviceIntent = Intent(context, HidForegroundService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(serviceIntent)
+        } else {
+            context.startService(serviceIntent)
+        }
+
+        // Subscribe to bond-state events
         try {
             context.registerReceiver(
                 bondReceiver,
                 IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
             )
-        } catch (_: Exception) { /* already registered */ }
+        } catch (_: Exception) {}
 
         adapter.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
-
             override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
                 Log.d(TAG, "HID profile proxy connected")
                 hidDevice = proxy as BluetoothHidDevice
 
-                // ── SDP record ────────────────────────────────────────────
-                // This is what appears in the Bluetooth device list on the PC.
                 val sdp = BluetoothHidDeviceAppSdpSettings(
-                    "HID Keyboard",          // name visible to host
-                    "Flutter HID Keyboard",           // description
-                    "Android",               // provider
+                    "HID Keyboard", "Flutter HID Keyboard", "Android",
                     BluetoothHidDevice.SUBCLASS1_KEYBOARD,
                     HID_REPORT_DESCRIPTOR
                 )
-
-                // ── QoS settings (use defaults for a simple keyboard) ──────
                 val qos = BluetoothHidDeviceAppQosSettings(
                     BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT,
-                    800,   // token rate  (bytes/s)
-                    9,     // token bucket (bytes)
-                    0,     // peak bandwidth
-                    10000, // latency (µs) – 10 ms
-                    Integer.MAX_VALUE // delay variation
+                    800, 9, 0, 10000, Integer.MAX_VALUE
                 )
-
-                // registerApp() tells Android to advertise us via SDP as a keyboard.
                 hidDevice?.registerApp(sdp, null, qos, Executors.newCachedThreadPool(), hidCallback)
                     ?: postStatus("Error: Could not register HID app")
             }
@@ -338,13 +364,14 @@ class BluetoothHidService(
                 Log.d(TAG, "HID profile proxy disconnected")
                 hidDevice = null
                 isRegistered = false
-                postStatus("Not paired")
+                postStatus("Disconnected")
             }
         }, BluetoothProfile.HID_DEVICE)
     }
 
     fun unregister() {
         try { context.unregisterReceiver(bondReceiver) } catch (_: Exception) {}
+        try { context.stopService(Intent(context, HidForegroundService::class.java)) } catch (_: Exception) {}
         hidDevice?.unregisterApp()
     }
 
@@ -355,11 +382,8 @@ class BluetoothHidService(
      */
     fun getPairedDevices(): List<Map<String, String>> {
         val adapter = bluetoothAdapter ?: return emptyList()
-        return adapter.bondedDevices.orEmpty().map { device ->
-            mapOf(
-                "name"    to (device.name ?: "Unknown"),
-                "address" to device.address
-            )
+        return adapter.bondedDevices.orEmpty().map { d ->
+            mapOf("name" to (d.name ?: "Unknown"), "address" to d.address)
         }
     }
 
@@ -374,10 +398,9 @@ class BluetoothHidService(
         }
         val target = adapter.bondedDevices?.firstOrNull { it.address == address }
         if (target == null) {
-            postStatus("Error: Device not bonded – pair via Android Bluetooth settings first")
+            postStatus("Error: Device not bonded – pair via Android Settings first")
             return
         }
-
         if (!isRegistered) {
             pendingConnectAddress = address
             postStatus("Registering HID...")
@@ -398,13 +421,22 @@ class BluetoothHidService(
         // Result comes back via onConnectionStateChanged
     }
 
+    // ────────────────────────────────────────────────────────────────────
+    // IMPORTANT FIX:
+    //   stopTyping() must NOT change the Bluetooth connection state.
+    //   It only cancels the typing loop.  After cancellation, we check
+    //   whether the HID connection is still alive and report the correct
+    //   status back ("Paired & Ready" if still connected, otherwise
+    //   "Disconnected").
+    // ────────────────────────────────────────────────────────────────────
+
     /**
      * Types [text] character by character over Bluetooth HID.
      * Each character produces one key-down report followed (25 ms later) by a key-up report.
      * Runs on a background thread so the UI stays responsive.
      */
     fun startTyping(text: String) {
-        val device = connectedDevice ?: run { postStatus("Error: No device paired"); return }
+        val device = connectedDevice ?: run { postStatus("Error: No device connected"); return }
         val hid = hidDevice ?: run { postStatus("Error: HID not ready"); return }
 
         typingCancelled = false
@@ -413,43 +445,33 @@ class BluetoothHidService(
         typingExecutor.submit {
             try {
                 for (ch in text) {
-                    // Check cancellation flag before every character.
                     if (typingCancelled) break
 
-                    val (scanCode, modifier) = KEY_MAP[ch] ?: run {
-                        // Unknown character – skip it with the same timing.
-                        Thread.sleep(25)
-                        return@run null
-                    } ?: continue
+                    val pair = KEY_MAP[ch]
+                    if (pair == null) { Thread.sleep(25); continue }
+                    val (scanCode, modifier) = pair
 
-                    // ── Key DOWN report ───────────────────────────────────
-                    // Report layout (8 bytes, boot-protocol):
-                    //   [0] modifier byte  (bitmask: bit1 = Left Shift, etc.)
-                    //   [1] reserved       (always 0x00)
-                    //   [2] key code 1     (first active key)
-                    //   [3..7] key codes 2-6 (unused = 0x00)
                     val keyDown = byteArrayOf(modifier, 0x00, scanCode, 0x00, 0x00, 0x00, 0x00, 0x00)
                     hid.sendReport(device, REPORT_ID.toInt(), keyDown)
+                    Thread.sleep(25)
 
-                    Thread.sleep(25) // 25 ms key-down hold
-
-                    // ── Key UP report ─────────────────────────────────────
-                    // All zeros = no keys pressed.
-                    val keyUp = ByteArray(8)
-                    hid.sendReport(device, REPORT_ID.toInt(), keyUp)
-
-                    Thread.sleep(25) // 25 ms between characters
-                }
-
-                if (!typingCancelled) {
-                    postStatus("Paired & Ready")
+                    hid.sendReport(device, REPORT_ID.toInt(), ByteArray(8))
+                    Thread.sleep(25)
                 }
             } catch (e: InterruptedException) {
                 Thread.currentThread().interrupt()
-                postStatus("Stopped")
             } catch (e: Exception) {
                 Log.e(TAG, "Typing error", e)
                 postStatus("Error: ${e.message}")
+                return@submit
+            }
+
+            // After typing loop ends (completed or cancelled), restore correct status.
+            // The connection is still alive – report "Paired & Ready".
+            if (connectedDevice != null) {
+                postStatus("Paired & Ready")
+            } else {
+                postStatus("Disconnected")
             }
         }
     }
@@ -458,8 +480,10 @@ class BluetoothHidService(
      * Signals the typing background thread to stop after the current character.
      */
     fun stopTyping() {
+        // ONLY cancel the typing loop. Do NOT touch the Bluetooth connection.
         typingCancelled = true
-        postStatus("Stopped")
+        // Don't post a new status here; the typing thread's finally-block
+        // will post "Paired & Ready" once it exits cleanly.
     }
 
     /**
@@ -472,10 +496,5 @@ class BluetoothHidService(
         return if (connectedDevice != null) "Paired & Ready" else "Waiting for PC to connect…"
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    /** Posts a status string to the main thread and then fires the callback. */
-    private fun postStatus(status: String) {
-        mainHandler.post { statusCallback(status) }
-    }
+    private fun postStatus(s: String) = mainHandler.post { statusCallback(s) }
 }
