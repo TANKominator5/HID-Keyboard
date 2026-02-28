@@ -31,6 +31,7 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
 
   String _status = 'Initialising...';
   bool _isTyping = false;
+  double _delayMs = 25; // ms between each keystroke (5 = fastest, 100 = slowest)
 
   @override
   void initState() {
@@ -61,7 +62,7 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
       _isTyping = true;
       _status = 'Typing...';
     });
-    final result = await _service.startTyping(text);
+    final result = await _service.startTyping(text, delayMs: _delayMs.round());
     if (mounted) setState(() => _status = result);
   }
 
@@ -241,6 +242,34 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
             ),
 
             const SizedBox(height: 12),
+
+            // ── Typing Speed Slider ───────────────────────────────────────
+            Row(
+              children: [
+                const Icon(Icons.speed, size: 20, color: Colors.grey),
+                const SizedBox(width: 8),
+                const Text('Speed', style: TextStyle(fontSize: 13)),
+                Expanded(
+                  child: Slider(
+                    value: _delayMs,
+                    min: 5,
+                    max: 200,
+                    divisions: 39,
+                    label: '${_delayMs.round()} ms',
+                    onChanged: _isTyping
+                        ? null
+                        : (v) => setState(() => _delayMs = v),
+                  ),
+                ),
+                SizedBox(
+                  width: 55,
+                  child: Text(
+                    '${_delayMs.round()} ms',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ),
+              ],
+            ),
 
             // ── CONNECT TO PC button ──────────────────────────────────────
             if (!isPaired)

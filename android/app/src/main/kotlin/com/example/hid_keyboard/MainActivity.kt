@@ -94,7 +94,8 @@ class MainActivity : FlutterActivity() {
                     // ── startTyping ───────────────────────────────────────
                     "startTyping" -> {
                         val text = call.argument<String>("text") ?: ""
-                        hidService.startTyping(text)
+                        val delayMs = call.argument<Int>("delayMs") ?: 25
+                        hidService.startTyping(text, delayMs.toLong())
                         result.success("Typing...")
                     }
 

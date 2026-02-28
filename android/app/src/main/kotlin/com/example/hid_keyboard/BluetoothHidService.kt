@@ -435,7 +435,7 @@ class BluetoothHidService(
      * Each character produces one key-down report followed (25 ms later) by a key-up report.
      * Runs on a background thread so the UI stays responsive.
      */
-    fun startTyping(text: String) {
+    fun startTyping(text: String, delayMs: Long = 25) {
         val device = connectedDevice ?: run { postStatus("Error: No device connected"); return }
         val hid = hidDevice ?: run { postStatus("Error: HID not ready"); return }
 
@@ -448,15 +448,15 @@ class BluetoothHidService(
                     if (typingCancelled) break
 
                     val pair = KEY_MAP[ch]
-                    if (pair == null) { Thread.sleep(25); continue }
+                    if (pair == null) { Thread.sleep(delayMs); continue }
                     val (scanCode, modifier) = pair
 
                     val keyDown = byteArrayOf(modifier, 0x00, scanCode, 0x00, 0x00, 0x00, 0x00, 0x00)
                     hid.sendReport(device, REPORT_ID.toInt(), keyDown)
-                    Thread.sleep(25)
+                    Thread.sleep(delayMs)
 
                     hid.sendReport(device, REPORT_ID.toInt(), ByteArray(8))
-                    Thread.sleep(25)
+                    Thread.sleep(delayMs)
                 }
             } catch (e: InterruptedException) {
                 Thread.currentThread().interrupt()
@@ -498,3 +498,4 @@ class BluetoothHidService(
 
     private fun postStatus(s: String) = mainHandler.post { statusCallback(s) }
 }
+

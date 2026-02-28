@@ -76,11 +76,11 @@ class HidKeyboardService {
   }
 
   /// Starts typing [text] character by character via HID reports.
-  Future<String> startTyping(String text) async {
+  Future<String> startTyping(String text, {int delayMs = 25}) async {
     try {
       final result = await _channel.invokeMethod<String>(
         'startTyping',
-        {'text': text},
+        {'text': text, 'delayMs': delayMs},
       );
       return result ?? 'Typing...';
     } on PlatformException catch (e) {
@@ -112,3 +112,4 @@ class HidKeyboardService {
     _channel.setMethodCallHandler(null);
   }
 }
+
