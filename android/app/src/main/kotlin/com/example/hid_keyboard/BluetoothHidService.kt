@@ -435,12 +435,14 @@ class BluetoothHidService(
      * Each character produces one key-down report followed (25 ms later) by a key-up report.
      * Runs on a background thread so the UI stays responsive.
      */
-    fun startTyping(text: String, delayMs: Long = 25) {
+    fun startTyping(text: String, delayMs: Long = 25, letterJitter: Boolean = false, wordPause: Boolean = false) {
         val device = connectedDevice ?: run { postStatus("Error: No device connected"); return }
         val hid = hidDevice ?: run { postStatus("Error: HID not ready"); return }
 
         typingCancelled = false
         postStatus("Typing...")
+
+        val rng = java.util.Random()
 
         typingExecutor.submit {
             try {
@@ -451,12 +453,28 @@ class BluetoothHidService(
                     if (pair == null) { Thread.sleep(delayMs); continue }
                     val (scanCode, modifier) = pair
 
+                    // Key DOWN – always use base delay so key-repeat doesn't fire
                     val keyDown = byteArrayOf(modifier, 0x00, scanCode, 0x00, 0x00, 0x00, 0x00, 0x00)
                     hid.sendReport(device, REPORT_ID.toInt(), keyDown)
                     Thread.sleep(delayMs)
 
+                    // Key UP
                     hid.sendReport(device, REPORT_ID.toInt(), ByteArray(8))
-                    Thread.sleep(delayMs)
+
+                    // Pause AFTER key-up: base delay + optional jitter + optional word pause
+                    var pause = delayMs
+
+                    // Add random letter jitter: +5–50 ms on top of base
+                    if (letterJitter) {
+                        pause += 5 + rng.nextInt(46)  // 5..50 inclusive
+                    }
+
+                    // Add random word pause for whitespace: +5–400 ms on top of base
+                    if (wordPause && (ch == ' ' || ch == '\n' || ch == '\t')) {
+                        pause += 5 + rng.nextInt(396)  // 5..400 inclusive
+                    }
+
+                    Thread.sleep(pause)
                 }
             } catch (e: InterruptedException) {
                 Thread.currentThread().interrupt()
@@ -498,4 +516,6 @@ class BluetoothHidService(
 
     private fun postStatus(s: String) = mainHandler.post { statusCallback(s) }
 }
+
+
 

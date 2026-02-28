@@ -32,6 +32,8 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
   String _status = 'Initialising...';
   bool _isTyping = false;
   double _delayMs = 25; // ms between each keystroke (5 = fastest, 100 = slowest)
+  bool _letterJitter = false;  // adds random 5–50 ms extra delay per letter
+  bool _wordPause = false;     // adds random 5–400 ms extra delay between words
 
   @override
   void initState() {
@@ -62,7 +64,12 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
       _isTyping = true;
       _status = 'Typing...';
     });
-    final result = await _service.startTyping(text, delayMs: _delayMs.round());
+    final result = await _service.startTyping(
+      text,
+      delayMs: _delayMs.round(),
+      letterJitter: _letterJitter,
+      wordPause: _wordPause,
+    );
     if (mounted) setState(() => _status = result);
   }
 
@@ -173,7 +180,7 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
   @override
   Widget build(BuildContext context) {
     final charCount = _textController.text.length;
-    final isPaired = _status == 'Paired & Ready';
+    final isPaired = _status == 'Paired & Ready' || _status == 'Typing...';
     final isDisconnected = _status == 'Disconnected';
     final isWaiting = _status.startsWith('Waiting') || _status.startsWith('Registering');
     final isConnecting = _status.startsWith('Connecting') || _status.startsWith('Device bonded');
@@ -269,6 +276,28 @@ class _HidKeyboardPageState extends State<HidKeyboardPage> {
                   ),
                 ),
               ],
+            ),
+
+            // ── Random letter jitter toggle ───────────────────────────────
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              title: const Text('Letter jitter', style: TextStyle(fontSize: 13)),
+              subtitle: const Text('+5–50 ms random delay per letter', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              value: _letterJitter,
+              onChanged: _isTyping ? null : (v) => setState(() => _letterJitter = v),
+            ),
+
+            // ── Random word pause toggle ──────────────────────────────────
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              title: const Text('Word pause', style: TextStyle(fontSize: 13)),
+              subtitle: const Text('+5–400 ms random delay between words', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              value: _wordPause,
+              onChanged: _isTyping ? null : (v) => setState(() => _wordPause = v),
             ),
 
             // ── CONNECT TO PC button ──────────────────────────────────────
