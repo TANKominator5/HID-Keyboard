@@ -156,6 +156,10 @@ class BluetoothHidService(
         // HID report ID. We use 0 (no report ID prefix) which matches boot protocol.
         const val REPORT_ID: Byte = 0x00
 
+        // HID scan code for the Home key.
+        // Used after Enter to cancel auto-indent in IDEs/editors.
+        const val SCANCODE_HOME: Byte = 0x4A
+
         // ── Keymap: Char → Pair(scanCode, modifier) ──────────────────────────
         // modifier 0x00 = no modifier
         // modifier 0x02 = Left Shift
@@ -446,8 +450,27 @@ class BluetoothHidService(
 
         typingExecutor.submit {
             try {
+                // Track whether we just sent an Enter key so we can press Home
+                // to cancel any auto-indent the receiving editor may apply.
+                var justSentEnter = false
+
                 for (ch in text) {
                     if (typingCancelled) break
+
+                    // ── Auto-indent fix ──────────────────────────────────
+                    // After Enter, IDEs typically auto-indent the new line.
+                    // We press Home to move cursor to column 0, then let
+                    // the loop type whatever leading whitespace the source
+                    // text actually contains.
+                    if (justSentEnter) {
+                        justSentEnter = false
+                        // Send Home key to cancel editor auto-indent
+                        val homeDown = byteArrayOf(0x00, 0x00, SCANCODE_HOME, 0x00, 0x00, 0x00, 0x00, 0x00)
+                        hid.sendReport(device, REPORT_ID.toInt(), homeDown)
+                        Thread.sleep(delayMs)
+                        hid.sendReport(device, REPORT_ID.toInt(), ByteArray(8)) // key up
+                        Thread.sleep(delayMs)
+                    }
 
                     val pair = KEY_MAP[ch]
                     if (pair == null) { Thread.sleep(delayMs); continue }
@@ -460,6 +483,11 @@ class BluetoothHidService(
 
                     // Key UP
                     hid.sendReport(device, REPORT_ID.toInt(), ByteArray(8))
+
+                    // Remember if this was an Enter so we can press Home next iteration
+                    if (ch == '\n') {
+                        justSentEnter = true
+                    }
 
                     // Pause AFTER key-up: base delay + optional jitter + optional word pause
                     var pause = delayMs
